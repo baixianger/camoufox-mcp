@@ -1,0 +1,19 @@
+{
+  "browser": {
+    "headless": false,
+    "viewport": [1280, 1080],
+    "timeout": 30000,
+    "humanize": 0.5,
+    "enableCache": true,
+    "blockImages": false,
+    "blockWebrtc": false
+  },
+  "proxy": {
+    "enabled": false,
+    "server": "${PROXY_SERVER}",
+    "username": "${PROXY_USERNAME}",
+    "password": "${PROXY_PASSWORD}",
+    "geoip": true
+  },
+  "popupSelectors": []
+}

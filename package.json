@@ -1,0 +1,66 @@
+{
+  "name": "camoufox-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Camoufox browser automation with anti-detection capabilities",
+  "mcpName": "io.github.baixianger/camoufox-mcp",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "camoufox-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "camoufox",
+    "browser",
+    "automation",
+    "anti-detection",
+    "playwright",
+    "firefox",
+    "stealth",
+    "scraping",
+    "web-scraping",
+    "anti-bot",
+    "fingerprint",
+    "claude",
+    "ai"
+  ],
+  "author": "baixianger",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/baixianger/camoufox-mcp"
+  },
+  "homepage": "https://github.com/baixianger/camoufox-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/baixianger/camoufox-mcp/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "camoufox-js": "^0.8.5",
+    "playwright-core": "^1.50.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

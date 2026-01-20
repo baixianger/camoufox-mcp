@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { browserManager } from '../browser/manager.js';
+import { getCurrentSnapshotVersion } from './snapshot.js';
 
 // Input schemas
 export const ClickInputSchema = z.object({
@@ -40,11 +41,40 @@ export const DragInputSchema = z.object({
   toUid: z.string().describe('Element UID to drag to'),
 });
 
+// Validate that UID is from current snapshot version
+function validateUid(uid: string): void {
+  const parts = uid.split('_');
+  if (parts.length !== 2) {
+    throw new Error(`Invalid UID format: ${uid}. Expected format: version_index (e.g., "1_0").`);
+  }
+
+  const uidVersion = parseInt(parts[0], 10);
+  const currentVersion = getCurrentSnapshotVersion();
+
+  if (isNaN(uidVersion)) {
+    throw new Error(`Invalid UID format: ${uid}. Version must be a number.`);
+  }
+
+  if (currentVersion === 0) {
+    throw new Error('No snapshot taken yet. Call takeSnapshot first.');
+  }
+
+  if (uidVersion !== currentVersion) {
+    throw new Error(
+      `This UID (${uid}) is from a stale snapshot (version ${uidVersion}). ` +
+      `Current snapshot version is ${currentVersion}. Take a new snapshot first.`
+    );
+  }
+}
+
 // Helper to get element by UID
 async function getElementByUid(page: any, uid: string) {
+  // Validate UID is from current snapshot
+  validateUid(uid);
+
   const element = await page.$(`[data-mcp-uid="${uid}"]`);
   if (!element) {
-    throw new Error(`Element with UID ${uid} not found. Take a new snapshot first.`);
+    throw new Error(`Element with UID ${uid} not found. The element may have been removed from the DOM. Take a new snapshot.`);
   }
   return element;
 }

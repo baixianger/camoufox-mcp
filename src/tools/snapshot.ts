@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { browserManager } from '../browser/manager.js';
 
+// Snapshot version counter - increments with each snapshot to prevent stale UID usage
+let snapshotVersion = 0;
+
+// Get current snapshot version for validation
+export function getCurrentSnapshotVersion(): number {
+  return snapshotVersion;
+}
+
 // Input schemas
 export const TakeSnapshotInputSchema = z.object({
   pageId: z.string().optional().describe('Page ID to snapshot. Uses active page if not specified.'),
@@ -8,7 +16,9 @@ export const TakeSnapshotInputSchema = z.object({
 });
 
 // DOM tree extraction script - detects interactive elements
-const DOM_TREE_SCRIPT = `
+// Function to generate script with version prefix for UIDs
+function getDomTreeScript(version: number): string {
+  return `
 (() => {
   const INTERACTIVE_ROLES = new Set([
     'button', 'link', 'menuitem', 'tab', 'checkbox', 'radio',
@@ -20,6 +30,7 @@ const DOM_TREE_SCRIPT = `
     'A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'DETAILS', 'SUMMARY'
   ]);
 
+  const VERSION = ${version};
   let uidCounter = 0;
   const elements = [];
 
@@ -54,7 +65,8 @@ const DOM_TREE_SCRIPT = `
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return null;
 
-    const uid = 'ref_' + (uidCounter++);
+    // UID format: version_index (e.g., "1_0", "1_1", "2_0")
+    const uid = VERSION + '_' + (uidCounter++);
     el.setAttribute('data-mcp-uid', uid);
 
     const info = {
@@ -111,6 +123,7 @@ const DOM_TREE_SCRIPT = `
   };
 })()
 `;
+}
 
 // Result type from DOM script
 interface DomTreeResult {
@@ -140,8 +153,11 @@ export async function takeSnapshot(input: z.infer<typeof TakeSnapshotInputSchema
     throw new Error(input.pageId ? `Page ${input.pageId} not found` : 'No active page');
   }
 
-  // Use isolated world for DOM access
-  const result = await page.evaluate(DOM_TREE_SCRIPT) as DomTreeResult;
+  // Increment snapshot version before taking snapshot
+  snapshotVersion++;
+
+  // Use isolated world for DOM access with versioned UIDs
+  const result = await page.evaluate(getDomTreeScript(snapshotVersion)) as DomTreeResult;
 
   // Format as text for LLM consumption
   let text = `Page: ${result.title}\nURL: ${result.url}\n\n`;

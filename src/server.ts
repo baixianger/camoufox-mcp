@@ -795,7 +795,7 @@ export function createServer(): Server {
   const server = new Server(
     {
       name: 'camoufox-mcp',
-      version: '0.2.0',
+      version: '1.0.0',
     },
     {
       capabilities: {

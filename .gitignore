@@ -25,3 +25,7 @@ coverage/
 # Environment
 .env
 .env.local
+
+# Registry tokens
+.mcpregistry_github_token
+.mcpregistry_registry_token

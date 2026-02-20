@@ -89,16 +89,8 @@ export class BrowserManager {
     this.state.initialized = true;
     console.error('[camoufox-mcp] Browser ready.');
 
-    // Auto-create sessions from contextPaths in settings
     if (settings.contextPaths.length > 0) {
-      for (const contextPath of settings.contextPaths) {
-        try {
-          const sessionId = await this.createSession({ contextPath });
-          console.error(`[camoufox-mcp] Auto-created session ${sessionId} from ${contextPath}`);
-        } catch (error) {
-          console.error(`[camoufox-mcp] Warning: Failed to create session from ${contextPath}: ${error}`);
-        }
-      }
+      console.error(`[camoufox-mcp] ${settings.contextPaths.length} context file(s) registered. Use create_session to load on demand.`);
     }
   }
 
@@ -107,6 +99,13 @@ export class BrowserManager {
    */
   isInitialized(): boolean {
     return this.state.initialized && this.state.browser !== null;
+  }
+
+  /**
+   * Get the list of registered context file paths from settings.
+   */
+  getRegisteredContextPaths(): string[] {
+    return this.settings?.contextPaths ?? [];
   }
 
   // --- Session management ---

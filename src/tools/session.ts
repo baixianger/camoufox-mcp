@@ -19,6 +19,8 @@ export const CloseSessionInputSchema = z.object({
   sessionId: z.string().describe('The session ID to close'),
 });
 
+export const ListContextFilesInputSchema = z.object({});
+
 // Tool implementations
 export async function createSession(input: z.infer<typeof CreateSessionInputSchema>) {
   const sessionId = await browserManager.createSession({
@@ -68,5 +70,16 @@ export async function closeSession(input: z.infer<typeof CloseSessionInputSchema
   return {
     sessionId: input.sessionId,
     message: `Session ${input.sessionId} closed`,
+  };
+}
+
+export async function listContextFiles() {
+  const paths = browserManager.getRegisteredContextPaths();
+  return {
+    contextPaths: paths,
+    count: paths.length,
+    message: paths.length > 0
+      ? `${paths.length} context file(s) registered. Use create_session with a contextPath to load one.`
+      : 'No context files registered in settings.',
   };
 }

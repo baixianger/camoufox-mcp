@@ -110,10 +110,12 @@ import {
   listSessions,
   saveSession,
   closeSession,
+  listContextFiles,
   CreateSessionInputSchema,
   ListSessionsInputSchema,
   SaveSessionInputSchema,
   CloseSessionInputSchema,
+  ListContextFilesInputSchema,
 } from './tools/session.js';
 
 // Tool definitions for MCP
@@ -719,6 +721,15 @@ EXAMPLES:
       required: ['sessionId'],
     },
   },
+  {
+    name: 'list_context_files',
+    description: 'List available context files registered in settings. Use create_session with a contextPath to load one on demand.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // Tool handler mapping
@@ -774,6 +785,7 @@ const toolHandlers: Record<string, (args: any) => Promise<any>> = {
   list_sessions: () => listSessions(),
   save_session: (args) => saveSession(SaveSessionInputSchema.parse(args)),
   close_session: (args) => closeSession(CloseSessionInputSchema.parse(args)),
+  list_context_files: () => listContextFiles(),
 };
 
 /**

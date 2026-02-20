@@ -107,6 +107,7 @@ Sessions provide isolated browser contexts — each session has its own cookies,
 | `list_sessions` | List all sessions with their page counts and metadata |
 | `save_session` | Export a session's cookies and localStorage to a JSON file |
 | `close_session` | Close a session and all its pages |
+| `list_context_files` | List available context files registered in settings |
 
 ### Page Management
 
@@ -229,9 +230,9 @@ Context files use [Playwright's storageState format](https://playwright.dev/docs
 }
 ```
 
-### Auto-Creating Sessions from Settings
+### Registering Context Files in Settings
 
-Add context file paths to `settings.json` — sessions are automatically created on startup:
+Add context file paths to `settings.json` to make them discoverable via `list_context_files`. Sessions are created **lazily on demand** — no memory is used until the agent calls `create_session`:
 
 ```json
 {
@@ -241,6 +242,8 @@ Add context file paths to `settings.json` — sessions are automatically created
   ]
 }
 ```
+
+The agent can then call `list_context_files` to see what's available, and `create_session` with the desired `contextPath` to load it when needed.
 
 ## Settings
 

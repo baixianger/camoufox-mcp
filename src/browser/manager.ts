@@ -8,6 +8,7 @@ import type {
   PageMetadata,
   CreatePageResult,
 } from './types.js';
+import { mergeContextFiles, injectContext, type BrowserContextData } from './context.js';
 
 /**
  * BrowserManager handles browser lifecycle and page management.
@@ -23,6 +24,7 @@ export class BrowserManager {
   };
 
   private settings: Settings | null = null;
+  private contextData: BrowserContextData | null = null;
 
   /**
    * Initialize the browser manager with settings.
@@ -67,6 +69,16 @@ export class BrowserManager {
     this.state.browser = await Camoufox(launchOptions as any);
     this.state.initialized = true;
     console.error('[camoufox-mcp] Browser ready.');
+
+    // Load context files if configured
+    if (settings.contextPaths.length > 0) {
+      try {
+        this.contextData = mergeContextFiles(settings.contextPaths);
+        console.error(`[camoufox-mcp] Loaded context from ${settings.contextPaths.length} file(s): ${this.contextData.cookies.length} cookies, ${this.contextData.origins.length} origins`);
+      } catch (error) {
+        console.error(`[camoufox-mcp] Warning: Failed to load context files: ${error}`);
+      }
+    }
   }
 
   /**
@@ -84,6 +96,16 @@ export class BrowserManager {
 
     const page = await this.state.browser!.newPage();
     const pageId = randomUUID();
+
+    // Inject stored context (cookies + localStorage) before navigation
+    if (this.contextData) {
+      try {
+        await injectContext(page, this.contextData);
+        console.error(`[camoufox-mcp] Injected context into new page ${pageId}`);
+      } catch (error) {
+        console.error(`[camoufox-mcp] Warning: Failed to inject context: ${error}`);
+      }
+    }
 
     // Navigate if URL provided
     if (url) {

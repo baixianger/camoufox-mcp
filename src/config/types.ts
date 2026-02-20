@@ -22,6 +22,7 @@ export const SettingsSchema = z.object({
   browser: BrowserSettingsSchema.default({}),
   proxy: ProxySettingsSchema.default({}),
   popupSelectors: z.array(z.string()).default([]),
+  contextPaths: z.array(z.string()).default([]),
 });
 
 export type BrowserSettings = z.infer<typeof BrowserSettingsSchema>;

@@ -15,5 +15,6 @@
     "password": "${PROXY_PASSWORD}",
     "geoip": true
   },
-  "popupSelectors": []
+  "popupSelectors": [],
+  "contextPaths": []
 }

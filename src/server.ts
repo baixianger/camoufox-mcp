@@ -100,6 +100,11 @@ import {
   ClearConsoleLogsInputSchema,
 } from './tools/console.js';
 
+import {
+  injectContextTool,
+  InjectContextInputSchema,
+} from './tools/context.js';
+
 // Tool definitions for MCP
 const TOOLS = [
   // Tab management
@@ -641,6 +646,20 @@ EXAMPLES:
       required: [],
     },
   },
+
+  // Context injection
+  {
+    name: 'inject_context',
+    description: 'Inject browser context (cookies + localStorage) from a JSON file into a page. The file should follow Playwright\'s storageState format with cookies[] and origins[].localStorage[].',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        contextPath: { type: 'string', description: 'Path to a browser context JSON file (Playwright storageState format)' },
+        pageId: { type: 'string', description: 'Page ID (uses active page if not specified)' },
+      },
+      required: ['contextPath'],
+    },
+  },
 ];
 
 // Tool handler mapping
@@ -687,6 +706,9 @@ const toolHandlers: Record<string, (args: any) => Promise<any>> = {
   stop_console_capture: (args) => stopConsoleCapture(StopConsoleCaptureInputSchema.parse(args)),
   get_console_logs: (args) => getConsoleLogs(GetConsoleLogsInputSchema.parse(args)),
   clear_console_logs: (args) => clearConsoleLogs(ClearConsoleLogsInputSchema.parse(args)),
+
+  // Context injection
+  inject_context: (args) => injectContextTool(InjectContextInputSchema.parse(args)),
 };
 
 /**

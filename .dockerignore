@@ -1,0 +1,37 @@
+# Dependencies (will be installed fresh in container)
+node_modules/
+
+# Source code (we copy dist/ instead)
+src/
+tests/
+*.ts
+tsconfig.json
+vitest.config.ts
+
+# Development files
+.git/
+.gitignore
+.env
+.env.*
+*.md
+!README.md
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test/coverage
+coverage/
+*.png
+
+# MCP registry tokens (security)
+.mcpregistry_*
+
+# Build cache
+*.tsbuildinfo

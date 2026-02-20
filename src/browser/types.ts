@@ -27,6 +27,27 @@ export interface PageInfo {
   url: string;
   title: string;
   isActive: boolean;
+  sessionId?: string;
+}
+
+/**
+ * Session info returned to MCP clients.
+ */
+export interface SessionInfo {
+  sessionId: string;
+  name?: string;
+  contextPath?: string;
+  createdAt: Date;
+  pageCount: number;
+}
+
+/**
+ * Metadata stored for each session.
+ */
+export interface SessionMetadata {
+  name?: string;
+  contextPath?: string;
+  createdAt: Date;
 }
 
 /**
@@ -58,10 +79,14 @@ export interface SnapshotResult {
  */
 export interface BrowserState {
   initialized: boolean;
-  browser: Browser | BrowserContext | null;
+  browser: Browser | null;
   pages: Map<string, Page>;
   activePageId: string | null;
   pageMetadata: Map<string, PageMetadata>;
+  sessions: Map<string, BrowserContext>;
+  sessionMetadata: Map<string, SessionMetadata>;
+  pageToSession: Map<string, string>;
+  activeSessionId: string | null;
 }
 
 /**

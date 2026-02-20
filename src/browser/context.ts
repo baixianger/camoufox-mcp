@@ -1,5 +1,5 @@
-import { readFileSync } from 'fs';
-import type { Page } from 'playwright-core';
+import { readFileSync, writeFileSync } from 'fs';
+import type { Page, BrowserContext } from 'playwright-core';
 
 export interface BrowserContextCookie {
   name: string;
@@ -40,48 +40,128 @@ export function loadContextFile(filePath: string): BrowserContextData {
 }
 
 /**
- * Inject cookies and localStorage into a page.
+ * Inject cookies into a BrowserContext. Context-level operation — applies to all pages.
  */
-export async function injectContext(page: Page, contextData: BrowserContextData): Promise<{ cookieCount: number; originCount: number }> {
-  const context = page.context();
-
-  // Inject cookies
-  if (contextData.cookies.length > 0) {
-    await context.addCookies(contextData.cookies);
+export async function injectCookies(context: BrowserContext, cookies: BrowserContextCookie[]): Promise<number> {
+  if (cookies.length > 0) {
+    await context.addCookies(cookies);
   }
-
-  // Inject localStorage for each origin
-  for (const origin of contextData.origins) {
-    if (origin.localStorage.length === 0) continue;
-
-    // Navigate to the origin to set localStorage
-    const currentUrl = page.url();
-    await page.goto(origin.origin, { waitUntil: 'domcontentloaded', timeout: 10000 });
-    await page.evaluate((items: Array<{ name: string; value: string }>) => {
-      for (const item of items) {
-        localStorage.setItem(item.name, item.value);
-      }
-    }, origin.localStorage);
-
-    // Navigate back if we were somewhere else
-    if (currentUrl && currentUrl !== 'about:blank') {
-      await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
-    }
-  }
-
-  return {
-    cookieCount: contextData.cookies.length,
-    originCount: contextData.origins.length,
-  };
+  return cookies.length;
 }
 
 /**
- * Load a context file and inject it into a page.
+ * Inject localStorage for each origin using a temporary page.
+ * Context-level operation — localStorage persists for all pages visiting the same origin.
+ */
+export async function injectLocalStorage(context: BrowserContext, origins: BrowserContextOrigin[]): Promise<number> {
+  const originsWithData = origins.filter(o => o.localStorage.length > 0);
+  if (originsWithData.length === 0) return 0;
+
+  // Use a temporary page to set localStorage for each origin
+  const tempPage = await context.newPage();
+  try {
+    for (const origin of originsWithData) {
+      await tempPage.goto(origin.origin, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      await tempPage.evaluate((items: Array<{ name: string; value: string }>) => {
+        for (const item of items) {
+          localStorage.setItem(item.name, item.value);
+        }
+      }, origin.localStorage);
+    }
+  } finally {
+    await tempPage.close();
+  }
+
+  return originsWithData.length;
+}
+
+/**
+ * Inject cookies and localStorage into a BrowserContext.
+ * Both are context-level — only needs to be called once.
+ */
+export async function injectContextToContext(context: BrowserContext, contextData: BrowserContextData): Promise<{ cookieCount: number; originCount: number }> {
+  const cookieCount = await injectCookies(context, contextData.cookies);
+  const originCount = await injectLocalStorage(context, contextData.origins);
+  return { cookieCount, originCount };
+}
+
+/**
+ * Inject cookies and localStorage into a page's context.
+ * Convenience wrapper for the inject_context MCP tool.
+ */
+export async function injectContext(page: Page, contextData: BrowserContextData): Promise<{ cookieCount: number; originCount: number }> {
+  return injectContextToContext(page.context(), contextData);
+}
+
+/**
+ * Load a context file and inject it into a page's context.
  */
 export async function injectContextFromFile(page: Page, filePath: string): Promise<{ cookieCount: number; originCount: number; filePath: string }> {
   const contextData = loadContextFile(filePath);
   const result = await injectContext(page, contextData);
   return { ...result, filePath };
+}
+
+/**
+ * Export cookies and localStorage from a BrowserContext to BrowserContextData.
+ * Collects cookies via context.cookies() and localStorage by navigating
+ * a temp page to each cookie origin.
+ */
+export async function saveContext(context: BrowserContext): Promise<BrowserContextData> {
+  const cookies = await context.cookies() as BrowserContextCookie[];
+
+  // Collect unique origins from cookies
+  const originSet = new Set<string>();
+  for (const cookie of cookies) {
+    const protocol = cookie.secure ? 'https' : 'http';
+    const domain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+    originSet.add(`${protocol}://${domain}`);
+  }
+
+  const origins: BrowserContextOrigin[] = [];
+
+  if (originSet.size > 0) {
+    const tempPage = await context.newPage();
+    try {
+      for (const origin of originSet) {
+        try {
+          await tempPage.goto(origin, { waitUntil: 'domcontentloaded', timeout: 10000 });
+          const items = await tempPage.evaluate(() => {
+            const result: Array<{ name: string; value: string }> = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key) {
+                result.push({ name: key, value: localStorage.getItem(key) ?? '' });
+              }
+            }
+            return result;
+          });
+          if (items.length > 0) {
+            origins.push({ origin, localStorage: items });
+          }
+        } catch {
+          // Skip origins we can't navigate to
+        }
+      }
+    } finally {
+      await tempPage.close();
+    }
+  }
+
+  return { cookies, origins };
+}
+
+/**
+ * Export cookies and localStorage from a BrowserContext and write to a JSON file.
+ */
+export async function saveContextToFile(context: BrowserContext, outputPath: string): Promise<{ cookieCount: number; originCount: number; outputPath: string }> {
+  const data = await saveContext(context);
+  writeFileSync(outputPath, JSON.stringify(data, null, 2), 'utf-8');
+  return {
+    cookieCount: data.cookies.length,
+    originCount: data.origins.length,
+    outputPath,
+  };
 }
 
 /**

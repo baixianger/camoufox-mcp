@@ -105,6 +105,17 @@ import {
   InjectContextInputSchema,
 } from './tools/context.js';
 
+import {
+  createSession,
+  listSessions,
+  saveSession,
+  closeSession,
+  CreateSessionInputSchema,
+  ListSessionsInputSchema,
+  SaveSessionInputSchema,
+  CloseSessionInputSchema,
+} from './tools/session.js';
+
 // Tool definitions for MCP
 const TOOLS = [
   // Tab management
@@ -119,11 +130,12 @@ const TOOLS = [
   },
   {
     name: 'new_page',
-    description: 'Create a new browser page/tab, optionally navigating to a URL',
+    description: 'Create a new browser page/tab, optionally navigating to a URL. Specify sessionId to create in a specific session.',
     inputSchema: {
       type: 'object',
       properties: {
         url: { type: 'string', description: 'URL to navigate to after creating the page' },
+        sessionId: { type: 'string', description: 'Session ID to create the page in (uses active session if not specified)' },
       },
       required: [],
     },
@@ -650,14 +662,61 @@ EXAMPLES:
   // Context injection
   {
     name: 'inject_context',
-    description: 'Inject browser context (cookies + localStorage) from a JSON file into a page. The file should follow Playwright\'s storageState format with cookies[] and origins[].localStorage[].',
+    description: 'Inject browser context (cookies + localStorage) from a JSON file into a session or page\'s context. The file should follow Playwright\'s storageState format with cookies[] and origins[].localStorage[].',
     inputSchema: {
       type: 'object',
       properties: {
         contextPath: { type: 'string', description: 'Path to a browser context JSON file (Playwright storageState format)' },
-        pageId: { type: 'string', description: 'Page ID (uses active page if not specified)' },
+        sessionId: { type: 'string', description: 'Session ID to inject into (uses active session if not specified)' },
+        pageId: { type: 'string', description: 'Page ID — context will be injected into the page\'s session' },
       },
       required: ['contextPath'],
+    },
+  },
+
+  // Session management
+  {
+    name: 'create_session',
+    description: 'Create a new isolated browser session with its own cookies and localStorage. Optionally pre-load context from a JSON file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Human-readable name for the session' },
+        contextPath: { type: 'string', description: 'Path to a browser context JSON file to pre-load' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'list_sessions',
+    description: 'List all browser sessions with their page counts and metadata',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'save_session',
+    description: 'Export a session\'s cookies and localStorage to a JSON file (Playwright storageState format)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'The session ID to save' },
+        outputPath: { type: 'string', description: 'File path to write the session state JSON' },
+      },
+      required: ['sessionId', 'outputPath'],
+    },
+  },
+  {
+    name: 'close_session',
+    description: 'Close a browser session and all its pages',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'The session ID to close' },
+      },
+      required: ['sessionId'],
     },
   },
 ];
@@ -709,6 +768,12 @@ const toolHandlers: Record<string, (args: any) => Promise<any>> = {
 
   // Context injection
   inject_context: (args) => injectContextTool(InjectContextInputSchema.parse(args)),
+
+  // Session management
+  create_session: (args) => createSession(CreateSessionInputSchema.parse(args)),
+  list_sessions: () => listSessions(),
+  save_session: (args) => saveSession(SaveSessionInputSchema.parse(args)),
+  close_session: (args) => closeSession(CloseSessionInputSchema.parse(args)),
 };
 
 /**

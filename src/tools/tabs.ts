@@ -6,6 +6,7 @@ export const ListPagesInputSchema = z.object({});
 
 export const NewPageInputSchema = z.object({
   url: z.string().optional().describe('URL to navigate to after creating the page'),
+  sessionId: z.string().optional().describe('Session ID to create the page in (uses active session if not specified)'),
 });
 
 export const SelectPageInputSchema = z.object({
@@ -27,11 +28,13 @@ export async function listPages() {
 }
 
 export async function newPage(input: z.infer<typeof NewPageInputSchema>) {
-  const result = await browserManager.createPage(input.url);
+  const result = await browserManager.createPage(input.url, input.sessionId);
+  const sessionId = browserManager.getSessionForPage(result.pageId);
   return {
     pageId: result.pageId,
     url: result.url,
-    message: `Created new page${input.url ? ` and navigated to ${input.url}` : ''}`,
+    sessionId,
+    message: `Created new page${input.url ? ` and navigated to ${input.url}` : ''}${sessionId ? ` in session ${sessionId}` : ''}`,
   };
 }
 

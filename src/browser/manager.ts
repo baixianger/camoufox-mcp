@@ -7,11 +7,13 @@ import type {
   PageInfo,
   PageMetadata,
   CreatePageResult,
+  SessionInfo,
+  SessionMetadata,
 } from './types.js';
-import { mergeContextFiles, injectContext, type BrowserContextData } from './context.js';
+import { loadContextFile, injectContextToContext } from './context.js';
 
 /**
- * BrowserManager handles browser lifecycle and page management.
+ * BrowserManager handles browser lifecycle, session management, and page management.
  * Provides a clean interface for MCP tools to interact with Camoufox.
  */
 export class BrowserManager {
@@ -21,10 +23,13 @@ export class BrowserManager {
     pages: new Map(),
     activePageId: null,
     pageMetadata: new Map(),
+    sessions: new Map(),
+    sessionMetadata: new Map(),
+    pageToSession: new Map(),
+    activeSessionId: null,
   };
 
   private settings: Settings | null = null;
-  private contextData: BrowserContextData | null = null;
 
   /**
    * Initialize the browser manager with settings.
@@ -66,17 +71,33 @@ export class BrowserManager {
 
     console.error('[camoufox-mcp] Launching Camoufox browser...');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.state.browser = await Camoufox(launchOptions as any);
+    const browserOrContext = await Camoufox(launchOptions as any);
+
+    // Camoufox may return a BrowserContext or a Browser depending on options.
+    // We need the Browser object for multi-context support.
+    // BrowserContext has addCookies; Browser does not.
+    if ('addCookies' in browserOrContext) {
+      // It's a BrowserContext — get the parent Browser
+      const ctx = browserOrContext as unknown as BrowserContext;
+      this.state.browser = ctx.browser()!;
+      // Close the default context Camoufox created — we'll create our own
+      await ctx.close();
+    } else {
+      this.state.browser = browserOrContext as Browser;
+    }
+
     this.state.initialized = true;
     console.error('[camoufox-mcp] Browser ready.');
 
-    // Load context files if configured
+    // Auto-create sessions from contextPaths in settings
     if (settings.contextPaths.length > 0) {
-      try {
-        this.contextData = mergeContextFiles(settings.contextPaths);
-        console.error(`[camoufox-mcp] Loaded context from ${settings.contextPaths.length} file(s): ${this.contextData.cookies.length} cookies, ${this.contextData.origins.length} origins`);
-      } catch (error) {
-        console.error(`[camoufox-mcp] Warning: Failed to load context files: ${error}`);
+      for (const contextPath of settings.contextPaths) {
+        try {
+          const sessionId = await this.createSession({ contextPath });
+          console.error(`[camoufox-mcp] Auto-created session ${sessionId} from ${contextPath}`);
+        } catch (error) {
+          console.error(`[camoufox-mcp] Warning: Failed to create session from ${contextPath}: ${error}`);
+        }
       }
     }
   }
@@ -88,24 +109,181 @@ export class BrowserManager {
     return this.state.initialized && this.state.browser !== null;
   }
 
+  // --- Session management ---
+
   /**
-   * Create a new page/tab.
+   * Create a new isolated session (BrowserContext).
+   * Optionally inject cookies/localStorage from a context file.
    */
-  async createPage(url?: string): Promise<CreatePageResult> {
+  async createSession(options?: { name?: string; contextPath?: string }): Promise<string> {
     this.ensureInitialized();
 
-    const page = await this.state.browser!.newPage();
-    const pageId = randomUUID();
+    const sessionId = randomUUID();
+    const context = await this.state.browser!.newContext();
 
-    // Inject stored context (cookies + localStorage) before navigation
-    if (this.contextData) {
-      try {
-        await injectContext(page, this.contextData);
-        console.error(`[camoufox-mcp] Injected context into new page ${pageId}`);
-      } catch (error) {
-        console.error(`[camoufox-mcp] Warning: Failed to inject context: ${error}`);
+    // Inject context data if a contextPath is provided
+    if (options?.contextPath) {
+      const contextData = loadContextFile(options.contextPath);
+      const result = await injectContextToContext(context, contextData);
+      console.error(`[camoufox-mcp] Session ${sessionId}: injected ${result.cookieCount} cookies, ${result.originCount} origins from ${options.contextPath}`);
+    }
+
+    this.state.sessions.set(sessionId, context);
+    this.state.sessionMetadata.set(sessionId, {
+      name: options?.name,
+      contextPath: options?.contextPath,
+      createdAt: new Date(),
+    });
+
+    // Set as active session if none is active
+    if (!this.state.activeSessionId) {
+      this.state.activeSessionId = sessionId;
+    }
+
+    return sessionId;
+  }
+
+  /**
+   * Get a session's BrowserContext by ID.
+   */
+  getSession(sessionId: string): BrowserContext | undefined {
+    return this.state.sessions.get(sessionId);
+  }
+
+  /**
+   * List all sessions with their info.
+   */
+  listSessions(): SessionInfo[] {
+    const sessions: SessionInfo[] = [];
+
+    for (const [sessionId, _context] of this.state.sessions) {
+      const metadata = this.state.sessionMetadata.get(sessionId);
+      // Count pages in this session
+      let pageCount = 0;
+      for (const [, sid] of this.state.pageToSession) {
+        if (sid === sessionId) pageCount++;
+      }
+
+      sessions.push({
+        sessionId,
+        name: metadata?.name,
+        contextPath: metadata?.contextPath,
+        createdAt: metadata?.createdAt ?? new Date(),
+        pageCount,
+      });
+    }
+
+    return sessions;
+  }
+
+  /**
+   * Close a session and all its pages.
+   */
+  async closeSession(sessionId: string): Promise<void> {
+    const context = this.state.sessions.get(sessionId);
+    if (!context) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    // Close all pages belonging to this session
+    const pageIdsToClose: string[] = [];
+    for (const [pageId, sid] of this.state.pageToSession) {
+      if (sid === sessionId) {
+        pageIdsToClose.push(pageId);
       }
     }
+
+    for (const pageId of pageIdsToClose) {
+      const page = this.state.pages.get(pageId);
+      if (page) {
+        try {
+          await page.close();
+        } catch {
+          // Page might already be closed
+        }
+      }
+      this.state.pages.delete(pageId);
+      this.state.pageMetadata.delete(pageId);
+      this.state.pageToSession.delete(pageId);
+    }
+
+    // Update active page if it was in this session
+    if (this.state.activePageId && pageIdsToClose.includes(this.state.activePageId)) {
+      const remaining = Array.from(this.state.pages.keys());
+      this.state.activePageId = remaining[0] ?? null;
+    }
+
+    // Close the context
+    try {
+      await context.close();
+    } catch {
+      // Ignore
+    }
+
+    this.state.sessions.delete(sessionId);
+    this.state.sessionMetadata.delete(sessionId);
+
+    // Update active session
+    if (this.state.activeSessionId === sessionId) {
+      const remainingSessions = Array.from(this.state.sessions.keys());
+      this.state.activeSessionId = remainingSessions[0] ?? null;
+    }
+  }
+
+  /**
+   * Get the session ID for a given page.
+   */
+  getSessionForPage(pageId: string): string | undefined {
+    return this.state.pageToSession.get(pageId);
+  }
+
+  /**
+   * Get the active session ID.
+   */
+  getActiveSessionId(): string | null {
+    return this.state.activeSessionId;
+  }
+
+  /**
+   * Set the active session.
+   */
+  setActiveSession(sessionId: string): void {
+    if (!this.state.sessions.has(sessionId)) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+    this.state.activeSessionId = sessionId;
+  }
+
+  // --- Page management ---
+
+  /**
+   * Ensure a default session exists, creating one if needed.
+   */
+  private async ensureDefaultSession(): Promise<string> {
+    if (this.state.activeSessionId && this.state.sessions.has(this.state.activeSessionId)) {
+      return this.state.activeSessionId;
+    }
+
+    // No active session — create a default one
+    const sessionId = await this.createSession({ name: 'default' });
+    return sessionId;
+  }
+
+  /**
+   * Create a new page/tab within a session.
+   */
+  async createPage(url?: string, sessionId?: string): Promise<CreatePageResult> {
+    this.ensureInitialized();
+
+    // Resolve which session to use
+    const targetSessionId = sessionId ?? await this.ensureDefaultSession();
+    const context = this.state.sessions.get(targetSessionId);
+    if (!context) {
+      throw new Error(`Session ${targetSessionId} not found`);
+    }
+
+    const page = await context.newPage();
+    const pageId = randomUUID();
 
     // Navigate if URL provided
     if (url) {
@@ -123,6 +301,7 @@ export class BrowserManager {
       url: page.url(),
       title: await page.title(),
     });
+    this.state.pageToSession.set(pageId, targetSessionId);
 
     // Set as active page
     this.state.activePageId = pageId;
@@ -131,8 +310,8 @@ export class BrowserManager {
     page.on('close', () => {
       this.state.pages.delete(pageId);
       this.state.pageMetadata.delete(pageId);
+      this.state.pageToSession.delete(pageId);
       if (this.state.activePageId === pageId) {
-        // Set another page as active, or null if no pages left
         const remaining = Array.from(this.state.pages.keys());
         this.state.activePageId = remaining[0] ?? null;
       }
@@ -203,6 +382,7 @@ export class BrowserManager {
           url: page.url(),
           title: await page.title(),
           isActive: pageId === this.state.activePageId,
+          sessionId: this.state.pageToSession.get(pageId),
         });
       } catch {
         // Page might be closed, skip it
@@ -229,10 +409,11 @@ export class BrowserManager {
 
     console.error('[camoufox-mcp] Shutting down browser...');
 
-    // Close all pages first
-    for (const [pageId, page] of this.state.pages) {
+    // Close all sessions (which closes their pages and contexts)
+    const sessionIds = Array.from(this.state.sessions.keys());
+    for (const sessionId of sessionIds) {
       try {
-        await page.close();
+        await this.closeSession(sessionId);
       } catch {
         // Ignore errors during cleanup
       }
@@ -252,6 +433,10 @@ export class BrowserManager {
       pages: new Map(),
       activePageId: null,
       pageMetadata: new Map(),
+      sessions: new Map(),
+      sessionMetadata: new Map(),
+      pageToSession: new Map(),
+      activeSessionId: null,
     };
 
     console.error('[camoufox-mcp] Browser shutdown complete.');

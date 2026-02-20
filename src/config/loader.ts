@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, resolve, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 import { Settings, SettingsSchema } from './types.js';
@@ -76,6 +76,12 @@ export function loadSettings(configPath?: string): Settings {
     const raw = JSON.parse(readFileSync(path, 'utf-8'));
     const substituted = substituteEnvVars(raw);
     const settings = SettingsSchema.parse(substituted);
+
+    // Resolve relative contextPaths against the settings file's directory
+    const configDir = dirname(resolve(path));
+    settings.contextPaths = settings.contextPaths.map(cp =>
+      isAbsolute(cp) ? cp : resolve(configDir, cp)
+    );
 
     // Log which config is being used
     const sourceLabels = {
